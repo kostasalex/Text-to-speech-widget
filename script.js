@@ -40,20 +40,33 @@ function renderPlayerButtons(titles) {
 function addPlayButtonEventListener() {
     const buttons = document.querySelectorAll(".player-button");
     buttons.forEach(btn => {
+        btn.isSpeaking = false; // track the speaking state
+        
         btn.addEventListener('click', function() {
-            // Speak the title
-            const utterance = speakTitle(btn);
-
-            // Toggle to stop icon when speaking starts
-            togglePlayStop(btn, 'stop');
-
-            // Add event listener to toggle back to play icon when speaking ends
-            utterance.onend = function() {
+            if (btn.isSpeaking) {
+                speechSynthesis.cancel(); // Stops the speaking
                 togglePlayStop(btn, 'play');
+                btn.isSpeaking = false;
+                return;
+            }
+
+            // Speak the title
+            const titleUtterance = speakTitle(btn);
+            togglePlayStop(btn, 'stop');
+            btn.isSpeaking = true;
+
+            // When the title speaking ends, speak the content
+            titleUtterance.onend = function() {
+                const contentUtterance = speakContent(btn);
+                contentUtterance.onend = function() {
+                    togglePlayStop(btn, 'play');
+                    btn.isSpeaking = false;
+                };
             };
         });
     });
 }
+
 
 function speakTitle(button) {
     const title = button.previousSibling.textContent;
@@ -61,6 +74,18 @@ function speakTitle(button) {
     speechSynthesis.speak(utterance);
     return utterance;
 }
+
+function speakContent(button) {
+    const contentElement = button.nextElementSibling; 
+    const contentTexts = Array.from(contentElement.querySelectorAll('p, li, a'))
+                              .map(el => decodeHtmlEntities(el.innerHTML))
+                              .join(' ');
+    console.log(contentTexts);
+    const utterance = new SpeechSynthesisUtterance(contentTexts);
+    speechSynthesis.speak(utterance);
+    return utterance;
+}
+
 
 function togglePlayStop(button, state) {
     const playIcon = button.querySelector('.play-icon');
@@ -73,4 +98,11 @@ function togglePlayStop(button, state) {
         playIcon.style.display = 'none';
         stopIcon.style.display = 'block';
     }
+}
+
+function decodeHtmlEntities(text) {
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = text;
+    // Strip out HTML tags
+    return textarea.textContent.replace(/<\/?[^>]+(>|$)/g, "");
 }
