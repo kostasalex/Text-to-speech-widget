@@ -10,14 +10,31 @@ function renderPlayer() {
     addPlayButtonEventListener();
 }
 
+
+function getElementHeight(element) {
+    // Base condition: If the element has no children, its height is 0
+    if (!element.children.length) {
+        return 0;
+    }
+
+    // Get the maximum height among all children
+    let maxChildHeight = 0;
+    for (const child of element.children) {
+        maxChildHeight = Math.max(maxChildHeight, getElementHeight(child));
+    }
+
+    // Height of current element is 1 + maximum height of its children
+    return 1 + maxChildHeight;
+}
+
 function getPotentialTitleElements() {
     const titleTags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
-    const excludedTags = ['nav', 'footer'];
+    const excludedTags =  ['script', 'link', 'meta', 'style', 'noscript', 'br', 'hr', 'img', 'source', 'param', 'track', 'input', 'output', 'nav', 'footer'];
     let titles = [];
 
-    const SUBSEQUENT_TITLE_THRESHOLD = 2;  // If 3 or more titles follow in close succession, assume the first is a section header.
+    const MAX_HEIGHT = 3; 
     
-    let stack = [document.body];  // Start with the body element
+    let stack = [document.body];  
     
     while (stack.length > 0) {
         const current = stack.pop();
@@ -28,15 +45,9 @@ function getPotentialTitleElements() {
 
         // If it's one of the title tags, assess if it's a potential overarching title
         if (titleTags.includes(current.tagName.toLowerCase())) {
-            let nextSibling = current.nextElementSibling;
-            let subsequentTitleCount = 0;
 
-            while (nextSibling && subsequentTitleCount < SUBSEQUENT_TITLE_THRESHOLD) {
-                subsequentTitleCount++;
-                nextSibling = nextSibling.nextElementSibling;
-            }
-
-            if (subsequentTitleCount < SUBSEQUENT_TITLE_THRESHOLD) {
+            const nextElement = current.nextElementSibling
+            if(!nextElement || (nextElement && getElementHeight(nextElement) <= MAX_HEIGHT)){
                 titles.push(current);
             }
         }
@@ -48,6 +59,24 @@ function getPotentialTitleElements() {
     
     return titles;
 }
+
+function annotateDepth() {
+    let stack = [{ element: document.body, depth: 0 }];
+    
+    while (stack.length > 0) {
+        const currentData = stack.pop();
+        const current = currentData.element;
+        const currentDepth = currentData.depth;
+        
+        const comment = document.createComment(`Depth: ${currentDepth}`);
+        current.parentNode.insertBefore(comment, current);
+        
+        const childrenWithDepth = Array.from(current.children).map(child => ({ element: child, depth: currentDepth + 1 }));
+        stack.push(...childrenWithDepth);
+    }
+}
+
+
 
 function renderPlayerButtons(titles) {
     titles.forEach(title => {
