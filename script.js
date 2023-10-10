@@ -2,6 +2,22 @@ document.addEventListener("DOMContentLoaded", function() {
     renderPlayer();
 });
 
+window.addEventListener('beforeunload', function() {
+    speechSynthesis.cancel();
+});
+
+
+function stopAllSpeakingButtons() {
+    const buttons = document.querySelectorAll(".player-button");
+    buttons.forEach(button => {
+        if (button.isSpeaking) {
+            speechSynthesis.cancel();
+            togglePlayStop(button, 'play');
+            button.isSpeaking = false;
+        }
+    });
+}
+
 // Attributes
 const TAG_HEIGHT = 'tag-height';
 
@@ -130,6 +146,7 @@ function renderPlayerButtons(titles) {
 
         // Adding the event listener to the button
         btn.addEventListener("click", function(e) {
+            stopAllSpeakingButtons();
             e.preventDefault();  // Prevents the default action (navigating to the link)
             e.stopPropagation(); // Stops the event from bubbling up to the <a> element
 
@@ -272,7 +289,7 @@ function injectStyles(styles) {
 
 const PLAYER_STYLES = `
     .player-button {
-        margin-right:  auto;
+        margin: auto;
         padding: 4px;
         margin-top: 30px;
         z-index: 30;
