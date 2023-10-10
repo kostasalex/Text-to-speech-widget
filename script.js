@@ -1,55 +1,90 @@
 document.addEventListener("DOMContentLoaded", function() {
-    
     renderPlayer();
 });
 
+// Attributes
+const TAG_HEIGHT = 'tag-height';
+
+
+const MAX_HEIGHT = 3; 
+
+const TITLE_TAGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+const TITLE_CLASS_WORDS = ['headline', 'title'];
+const EXCLUDED_TAGS = ['script', 'link', 'meta', 'style', 'noscript', 'br', 
+'hr', 'source', 'param', 'track', 'input', 'nav', 'footer', 'button', 'header', 'time', 'form'];
+const EXCLUDED_WORDS = ['message', 'form', 'error', 'footer', 'header', 'nav', 'time', 'date', 'sign'];
+
+
 function renderPlayer() {
     injectStyles(PLAYER_STYLES);
+    preprocessHtml();
     const titles = getPotentialTitleElements();
     renderPlayerButtons(titles);
     addPlayButtonEventListener();
 }
 
 
-function getElementHeight(element) {
+function preprocessHtml(){
+    calculateTagHeight(document.body);
+}
+
+function calculateTagHeight(element) {
     // Base condition: If the element has no children, its height is 0
     if (!element.children.length) {
+        element.setAttribute(TAG_HEIGHT, 0);
         return 0;
     }
 
     // Get the maximum height among all children
     let maxChildHeight = 0;
     for (const child of element.children) {
-        maxChildHeight = Math.max(maxChildHeight, getElementHeight(child));
+        maxChildHeight = Math.max(maxChildHeight, calculateTagHeight(child));
+        element.setAttribute(TAG_HEIGHT, maxChildHeight);
     }
 
     // Height of current element is 1 + maximum height of its children
     return 1 + maxChildHeight;
 }
 
-function getPotentialTitleElements() {
-    const titleTags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
-    const excludedTags =  ['script', 'link', 'meta', 'style', 'noscript', 'br', 'hr', 'img', 'source', 'param', 'track', 'input', 'output', 'nav', 'footer'];
-    let titles = [];
 
-    const MAX_HEIGHT = 3; 
+
+function isRelativeContent(element) {
+    const nextElement = element.nextElementSibling;
+
+    const hasValidTag = TITLE_TAGS.includes(element.tagName.toLowerCase());
+
+    const hasValidClassWords = Array.from(element.classList).some(className => {
+        // Split the class name by '-' and check each part against TITLE_CLASS_WORDS
+        const parts = className.split('-');
+        return parts.some(part => TITLE_CLASS_WORDS.includes(part.toLowerCase()));
+    });
+
+    if ((hasValidTag || hasValidClassWords) && (!nextElement || (nextElement && nextElement.getAttribute(TAG_HEIGHT) <= MAX_HEIGHT))) {
+        return true;
+    }
+
+    return false;
+}
+
+
+
+
+function getPotentialTitleElements() {
+
+    let titles = [];
     
-    let stack = [document.body];  
+    let stack = [document.body];
     
     while (stack.length > 0) {
         const current = stack.pop();
 
         // If it's an excluded element, don't process its children
-        if(excludedTags.includes(current.tagName.toLowerCase()))continue;
+        if(EXCLUDED_TAGS.includes(current.tagName.toLowerCase()))continue;
 
 
         // If it's one of the title tags, assess if it's a potential overarching title
-        if (titleTags.includes(current.tagName.toLowerCase())) {
-
-            const nextElement = current.nextElementSibling
-            if(!nextElement || (nextElement && getElementHeight(nextElement) <= MAX_HEIGHT)){
-                titles.push(current);
-            }
+        if(isRelativeContent(current)){
+            titles.push(current);
         }
         
         // Add children to the stack to process them
@@ -92,10 +127,27 @@ function renderPlayerButtons(titles) {
 
         btn.appendChild(playIcon);
         btn.appendChild(stopIcon);
-        
+
+        // Adding the event listener to the button
+        btn.addEventListener("click", function(e) {
+            e.preventDefault();  // Prevents the default action (navigating to the link)
+            e.stopPropagation(); // Stops the event from bubbling up to the <a> element
+
+            // Your button's code here
+            // For example, toggling between play and stop icons
+            if (playIcon.style.display !== "none") {
+                playIcon.style.display = "none";
+                stopIcon.style.display = "block";
+            } else {
+                playIcon.style.display = "block";
+                stopIcon.style.display = "none";
+            }
+        });
+
         title.parentNode.insertBefore(btn, title.nextSibling);
     });
 }
+
 
 function addPlayButtonEventListener() {
     const buttons = document.querySelectorAll(".player-button");
@@ -220,20 +272,26 @@ function injectStyles(styles) {
 
 const PLAYER_STYLES = `
     .player-button {
-        margin-left:  98px;
+        margin-right:  auto;
         padding: 4px;
         margin-top: 30px;
-        z-index: 10;
+        z-index: 30;
         border: none;
+        background: #1E90FF;
         cursor: pointer;
         position: relative;
-        width: 32px;
-        height: 32px;
+        width: 35px;
+        height: 35px;
         border-radius: 25px;
         display: flex;
         align-items: center;
         justify-content: center;
         box-shadow: 2px 3px 3px black;
+
+    }
+
+    .player-button:hover {
+        background: white;
     }
 
     .play-icon, .stop-icon {
