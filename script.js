@@ -8,28 +8,93 @@ window.addEventListener('beforeunload', function() {
 
 
 
-// Attributes
+const MAX_HEIGHT_FOR_TITLE = 3;
+
 const TAG_HEIGHT = 'tag-height';
 
-const MAX_HEIGHT_FOR_TITLE = 3; 
+const PLAYER_BUTTON = 'player-button';
+
+const MARKED_CONTENT = 'marked-content';
 
 const TITLE_TAGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
-const TITLE_CLASS_WORDS = ['headline', 'title'];
+
+const TITLE_INDICATOR_KEYWORDS = ['headline', 'title'];
+
 const EXCLUDED_TAGS = ['script', 'link', 'meta', 'style', 'noscript', 'br', 
 'hr', 'source', 'param', 'track', 'input', 'nav', 'footer', 'button', 'header', 'time', 'form'];
 
-//* No Need Atm
-//const EXCLUDED_WORDS = ['message', 'form', 'error', 'footer', 'header', 'nav', 'time', 'date', 'sign'];
-
+const EXCLUDED_WORDS = ['mobile', 'name', 'date', 'print', 'time'];
 
 
 function renderPlayer() {
     injectStyles(PLAYER_STYLES);
     preprocessHtml();
     const titlesOrSummaries = getValidatedTitlesOrSummaries();
-    //markRelevantContent(titlesOrSummaries);
-    renderPlayerButtons(titlesOrSummaries);
+    markRelevantContent(titlesOrSummaries);
+    renderPlayerButtons();
     addPlayButtonEventListener();
+}
+
+
+function isValidContent(element) {
+    const content = element.textContent.trim();
+
+    /*const hasExcludedWords = Array.from(element.classList).some(className => {
+        const parts = [className, ...className.split('-')];
+        return parts.some(part => EXCLUDED_WORDS.includes(part.toLowerCase()));
+    });
+
+
+    const hasExcludedWords = Array.from(element.classList).some(className => {
+        return EXCLUDED_WORDS.some(excludedWord => className.toLowerCase().includes(excludedWord));
+    });
+
+
+    if(hasExcludedWords)return false;*/
+
+    // Check for all-uppercase words
+    const uppercasePattern = /\b[A-Z]+\b/;
+    if (uppercasePattern.test(content)) return false;
+
+    return true;
+}
+
+
+function markRelevantContent(elements) {
+
+    let buttonId = 0;
+    elements.forEach(element => {
+        // Check if the element hasn't been marked yet
+        if (!element.hasAttribute(MARKED_CONTENT)) {
+
+            buttonId++;
+            element.setAttribute(PLAYER_BUTTON, buttonId);
+            if(isValidContent(element))
+                element.setAttribute(MARKED_CONTENT, buttonId);
+            markSiblings(element, buttonId);
+        }
+    });
+}
+
+function markSiblings(element, buttonId) {
+    let sibling = element;
+
+    // Iterate through the next siblings of the element
+    while (sibling) {
+        if (!sibling.hasAttribute(MARKED_CONTENT)) {
+            if(isValidContent(element))
+                sibling.setAttribute(MARKED_CONTENT, buttonId);
+
+            // Check children of the sibling
+            sibling.childNodes.forEach(child => {
+                if (child.nodeType === Node.ELEMENT_NODE) {
+                    markSiblings(child, buttonId);
+                }
+            });
+        }
+
+        sibling = sibling.nextElementSibling;
+    }
 }
 
 
@@ -73,7 +138,7 @@ function getValidatedTitlesOrSummaries() {
     while(stack.length){
         const current = stack.pop();
 
-        if(EXCLUDED_TAGS.includes(current.tagName.toLowerCase()))continue;
+        if(hasExcludedElements(current))continue;
 
         if(isRelativeContent(current))titlesOrSummaries.push(current);
             
@@ -94,12 +159,12 @@ function isRelativeContent(element) {
 
     const hasValidTag = TITLE_TAGS.includes(element.tagName.toLowerCase());
 
-    const hasValidClassWords = Array.from(element.classList).some(className => {
+    const hasValidIndicatorKeyword = Array.from(element.classList).some(className => {
         const parts = className.split('-');
-        return parts.some(part => TITLE_CLASS_WORDS.includes(part.toLowerCase()));
+        return parts.some(part => TITLE_INDICATOR_KEYWORDS.includes(part.toLowerCase()));
     });
 
-    if(hasValidTag || hasValidClassWords){
+    if(hasValidTag || hasValidIndicatorKeyword){
         if(!nextElement || (nextElement && nextElement.getAttribute(TAG_HEIGHT) <= MAX_HEIGHT_FOR_TITLE))
             return true;
     }
@@ -114,14 +179,16 @@ function isRelativeContent(element) {
  *
  * @param {HTMLElement[]} elements - The list of elements beside which the player buttons are to be added.
  */
-function renderPlayerButtons(elements) {
+function renderPlayerButtons() {
+    const elements = document.querySelectorAll(`[${PLAYER_BUTTON}]`); // This gets all elements with the PLAYER_BUTTON attribute
+    console.log(elements);
     elements.forEach(element => {
         const btn = document.createElement("button");
         btn.classList.add("player-button");
 
         const playIcon = document.createElement("span");
         playIcon.classList.add("play-icon");
-        
+
         const stopIcon = document.createElement("span");
         stopIcon.classList.add("stop-icon");
         stopIcon.style.display = "none"; // Initially hidden
@@ -146,13 +213,13 @@ function addPlayButtonEventListener() {
     const buttons = document.querySelectorAll(".player-button");
     buttons.forEach(btn => {
         btn.addEventListener('click', function(e) {
-            e.preventDefault();  // Prevents the default action
-            e.stopPropagation(); // Stops the event from bubbling
+            e.preventDefault();  
+            e.stopPropagation(); 
 
             stopAllSpeakingButtons(btn);
 
             if (btn.isSpeaking) {
-                speechSynthesis.cancel(); // Stops the speaking
+                speechSynthesis.cancel();
                 togglePlayStop(btn, 'play');
                 return;
             }
@@ -180,15 +247,29 @@ function addPlayButtonEventListener() {
 
 
 function speakTitle(button) {
-    const title = decodeHtmlEntities(button.previousSibling.textContent);
-    console.log(title);
+    let titleElement = button.previousElementSibling;
+
+    //if(hasExcludedElements(titleElement)){
+     //   titleElement = Array.from(titleElement.children).find(child => !hasExcludedElements(child));
+    //}
+    
+    if(!titleElement) return null;
+
+    const title = decodeHtmlEntities(titleElement.textContent);
+    console.log("speak title:" ,title);
     const utterance = new SpeechSynthesisUtterance(title);
     speechSynthesis.speak(utterance);
     return utterance;
 }
 
 function speakContent(button) {
-    const contentElement = button.nextElementSibling;
+    let contentElement = button.nextElementSibling;
+
+    // Loop to find the next eligible content element
+    while(contentElement && hasExcludedElements(contentElement)) {
+
+        contentElement = contentElement.nextElementSibling;
+    }
 
     if(!contentElement) return null;
 
@@ -211,6 +292,23 @@ function speakContent(button) {
     speechSynthesis.speak(utterance);
     return utterance;
 }
+
+function hasExcludedElements(elem) {
+
+    const hasExcludedClassName = Array.from(elem.classList).some(className => 
+        EXCLUDED_WORDS.some(excludedWord => className.toLowerCase().includes(excludedWord))
+    );
+
+    const hasExcludedTag = EXCLUDED_TAGS.includes(elem.tagName.toLowerCase());
+
+    return hasExcludedClassName || hasExcludedTag;
+}
+
+
+
+
+
+
 
 
 
@@ -259,7 +357,7 @@ function stopAllSpeakingButtons(excludedBtn) {
 
 
 
-function togglePlayStop(button, state) {
+function togglePlayStop(button, state){
     speechSynthesis.cancel();
     const playIcon = button.querySelector('.play-icon');
     const stopIcon = button.querySelector('.stop-icon');
@@ -285,7 +383,7 @@ function injectStyles(styles) {
 
 const PLAYER_STYLES = `
     .player-button {
-        margin-rigth: auto;
+        margin-right: auto;
         padding: 4px;
         margin-top: 30px;
         z-index: 30;
