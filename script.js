@@ -7,37 +7,31 @@ window.addEventListener('beforeunload', function() {
 });
 
 
-function stopAllSpeakingButtons() {
-    const buttons = document.querySelectorAll(".player-button");
-    buttons.forEach(button => {
-        if (button.isSpeaking) {
-            speechSynthesis.cancel();
-            togglePlayStop(button, 'play');
-            button.isSpeaking = false;
-        }
-    });
-}
 
 // Attributes
 const TAG_HEIGHT = 'tag-height';
 
-
-const MAX_HEIGHT = 3; 
+const MAX_HEIGHT_FOR_TITLE = 3; 
 
 const TITLE_TAGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
 const TITLE_CLASS_WORDS = ['headline', 'title'];
 const EXCLUDED_TAGS = ['script', 'link', 'meta', 'style', 'noscript', 'br', 
 'hr', 'source', 'param', 'track', 'input', 'nav', 'footer', 'button', 'header', 'time', 'form'];
-const EXCLUDED_WORDS = ['message', 'form', 'error', 'footer', 'header', 'nav', 'time', 'date', 'sign'];
+
+//* No Need Atm
+//const EXCLUDED_WORDS = ['message', 'form', 'error', 'footer', 'header', 'nav', 'time', 'date', 'sign'];
+
 
 
 function renderPlayer() {
     injectStyles(PLAYER_STYLES);
     preprocessHtml();
-    const titles = getPotentialTitleElements();
-    renderPlayerButtons(titles);
+    const titlesOrSummaries = getValidatedTitlesOrSummaries();
+    //markRelevantContent(titlesOrSummaries);
+    renderPlayerButtons(titlesOrSummaries);
     addPlayButtonEventListener();
 }
+
 
 
 function preprocessHtml(){
@@ -51,32 +45,63 @@ function calculateTagHeight(element) {
         return 0;
     }
 
-    // Get the maximum height among all children
+    const currentHeight = 1;
+
     let maxChildHeight = 0;
     for (const child of element.children) {
         maxChildHeight = Math.max(maxChildHeight, calculateTagHeight(child));
         element.setAttribute(TAG_HEIGHT, maxChildHeight);
     }
 
-    // Height of current element is 1 + maximum height of its children
-    return 1 + maxChildHeight;
+    return currentHeight + maxChildHeight;
 }
 
 
+/**
+ * Returns validated titles or summaries based on their HTML structure and styling.
+ * It searches through the entire document, identifies potential titles, and
+ * checks them against a set of criteria (like HTML tag type, class names, and adjacent content height).
+ * 
+ * @returns {Array} An array of HTML elements that are considered valid titles or summaries.
+ */
+function getValidatedTitlesOrSummaries() {
 
+    let titlesOrSummaries = [];
+    
+    let stack = [document.body];
+
+    while(stack.length){
+        const current = stack.pop();
+
+        if(EXCLUDED_TAGS.includes(current.tagName.toLowerCase()))continue;
+
+        if(isRelativeContent(current))titlesOrSummaries.push(current);
+            
+        stack.push(...Array.from(current.children));
+    }
+    
+    return titlesOrSummaries;
+}
+/**
+ * Checks if a given HTML element is relevant content (like a title or summary) based on its tag, class, and adjacent element height.
+ * 
+ * @param {HTMLElement} element - The HTML element to validate.
+ * @returns {boolean} True if the element is considered a relevant content, otherwise false.
+ */
 function isRelativeContent(element) {
+
     const nextElement = element.nextElementSibling;
 
     const hasValidTag = TITLE_TAGS.includes(element.tagName.toLowerCase());
 
     const hasValidClassWords = Array.from(element.classList).some(className => {
-        // Split the class name by '-' and check each part against TITLE_CLASS_WORDS
         const parts = className.split('-');
         return parts.some(part => TITLE_CLASS_WORDS.includes(part.toLowerCase()));
     });
 
-    if ((hasValidTag || hasValidClassWords) && (!nextElement || (nextElement && nextElement.getAttribute(TAG_HEIGHT) <= MAX_HEIGHT))) {
-        return true;
+    if(hasValidTag || hasValidClassWords){
+        if(!nextElement || (nextElement && nextElement.getAttribute(TAG_HEIGHT) <= MAX_HEIGHT_FOR_TITLE))
+            return true;
     }
 
     return false;
@@ -84,53 +109,13 @@ function isRelativeContent(element) {
 
 
 
-
-function getPotentialTitleElements() {
-
-    let titles = [];
-    
-    let stack = [document.body];
-    
-    while (stack.length > 0) {
-        const current = stack.pop();
-
-        // If it's an excluded element, don't process its children
-        if(EXCLUDED_TAGS.includes(current.tagName.toLowerCase()))continue;
-
-
-        // If it's one of the title tags, assess if it's a potential overarching title
-        if(isRelativeContent(current)){
-            titles.push(current);
-        }
-        
-        // Add children to the stack to process them
-        stack.push(...Array.from(current.children));
-    
-    }
-    
-    return titles;
-}
-
-function annotateDepth() {
-    let stack = [{ element: document.body, depth: 0 }];
-    
-    while (stack.length > 0) {
-        const currentData = stack.pop();
-        const current = currentData.element;
-        const currentDepth = currentData.depth;
-        
-        const comment = document.createComment(`Depth: ${currentDepth}`);
-        current.parentNode.insertBefore(comment, current);
-        
-        const childrenWithDepth = Array.from(current.children).map(child => ({ element: child, depth: currentDepth + 1 }));
-        stack.push(...childrenWithDepth);
-    }
-}
-
-
-
-function renderPlayerButtons(titles) {
-    titles.forEach(title => {
+/**
+ * Creates and appends play buttons next to the specified elements.
+ *
+ * @param {HTMLElement[]} elements - The list of elements beside which the player buttons are to be added.
+ */
+function renderPlayerButtons(elements) {
+    elements.forEach(element => {
         const btn = document.createElement("button");
         btn.classList.add("player-button");
 
@@ -144,63 +129,56 @@ function renderPlayerButtons(titles) {
         btn.appendChild(playIcon);
         btn.appendChild(stopIcon);
 
-        // Adding the event listener to the button
-        btn.addEventListener("click", function(e) {
-            stopAllSpeakingButtons();
-            e.preventDefault();  // Prevents the default action (navigating to the link)
-            e.stopPropagation(); // Stops the event from bubbling up to the <a> element
-
-            // Your button's code here
-            // For example, toggling between play and stop icons
-            if (playIcon.style.display !== "none") {
-                playIcon.style.display = "none";
-                stopIcon.style.display = "block";
-            } else {
-                playIcon.style.display = "block";
-                stopIcon.style.display = "none";
-            }
-        });
-
-        title.parentNode.insertBefore(btn, title.nextSibling);
+        element.parentNode.insertBefore(btn, element.nextSibling);
     });
 }
 
 
+
+/**
+ * Adds event listeners to the player buttons.
+ * 
+ * For each player button, an event listener is added to handle the play and stop functionality.
+ * The function handles the speech synthesis, switching between the play and stop icons, 
+ * and manages the state of the button (whether it's currently speaking or not).
+ */
 function addPlayButtonEventListener() {
     const buttons = document.querySelectorAll(".player-button");
     buttons.forEach(btn => {
-        btn.isSpeaking = false; // track the speaking state
-        
-        btn.addEventListener('click', function() {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();  // Prevents the default action
+            e.stopPropagation(); // Stops the event from bubbling
+
+            stopAllSpeakingButtons(btn);
+
             if (btn.isSpeaking) {
                 speechSynthesis.cancel(); // Stops the speaking
                 togglePlayStop(btn, 'play');
-                btn.isSpeaking = false;
                 return;
             }
 
+            togglePlayStop(btn, 'stop');
             // Speak the title
             const titleUtterance = speakTitle(btn);
-            togglePlayStop(btn, 'stop');
-            btn.isSpeaking = true;
 
             // When the title speaking ends, speak the content
             titleUtterance.onend = function() {
                 const contentUtterance = speakContent(btn);
-                if(!contentUtterance){
+                if(!contentUtterance) {
                     togglePlayStop(btn, 'play');
-                    btn.isSpeaking = false;
                     return;
                 }
                 contentUtterance.onend = function() {
                     togglePlayStop(btn, 'play');
-                    btn.isSpeaking = false;
                 };
             };
         });
     });
 }
-// speak
+
+
+
+
 function speakTitle(button) {
     const title = decodeHtmlEntities(button.previousSibling.textContent);
     console.log(title);
@@ -248,21 +226,8 @@ function getTextNodesIn(elem) {
     return textNodes;
 }
 
-function togglePlayStop(button, state) {
-    const playIcon = button.querySelector('.play-icon');
-    const stopIcon = button.querySelector('.stop-icon');
 
-    if (state === 'play') {
-        playIcon.style.display = 'block';
-        stopIcon.style.display = 'none';
-    } else if (state === 'stop') {
-        playIcon.style.display = 'none';
-        stopIcon.style.display = 'block';
-    }
-}
-/**
- *  Removes
- */
+
 function decodeHtmlEntities(text) {
     const textarea = document.createElement("textarea");
 
@@ -280,16 +245,47 @@ function decodeHtmlEntities(text) {
 
 
 
+function stopAllSpeakingButtons(excludedBtn) {
+    const buttons = document.querySelectorAll(".player-button");
+    buttons.forEach(button => {
+
+        if (button !== excludedBtn && button.isSpeaking) {
+            speechSynthesis.cancel();
+            togglePlayStop(button, 'play');
+            button.isSpeaking = false;
+        }
+    });
+}
+
+
+
+function togglePlayStop(button, state) {
+    speechSynthesis.cancel();
+    const playIcon = button.querySelector('.play-icon');
+    const stopIcon = button.querySelector('.stop-icon');
+
+    if (state === 'play') {
+        button.isSpeaking = false;
+        playIcon.style.display = 'block';
+        stopIcon.style.display = 'none';
+    } else if (state === 'stop') {
+        button.isSpeaking = true;
+        playIcon.style.display = 'none';
+        stopIcon.style.display = 'block';
+    }
+}
+
+
+
 function injectStyles(styles) {
     const styleSheet = document.createElement("style");
     styleSheet.innerText = styles;
     document.head.appendChild(styleSheet);
 }
 
-
 const PLAYER_STYLES = `
     .player-button {
-        margin: auto;
+        margin-rigth: auto;
         padding: 4px;
         margin-top: 30px;
         z-index: 30;
@@ -308,7 +304,8 @@ const PLAYER_STYLES = `
     }
 
     .player-button:hover {
-        background: white;
+        transform: scale(2) rotate(10deg);
+        transform-origin: center;
     }
 
     .play-icon, .stop-icon {
