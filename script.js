@@ -1,94 +1,141 @@
-document.addEventListener("DOMContentLoaded", function() {
-    renderPlayer();
-});
+/********************************************** Initialization ***************************************************/
+
+setTimeout(renderPlayer, 500);
 
 window.addEventListener('beforeunload', function() {
     speechSynthesis.cancel();
 });
 
+/*****************************************************************************************************************/
 
 
-const MAX_HEIGHT_FOR_TITLE = 3;
 
-const TAG_HEIGHT = 'tag-height';
+/******************************************* Constants & Configurations *******************************************/
 
-const PLAYER_BUTTON = 'player-button';
+const MAX_HEIGHT_BELOW_TITLE  = 3;
+const PLAYER_BUTTON_ATTRIBUTE  = 'player-button';
+const MARKED_CONTENT_ATTRIBUTE  = 'marked-content';
 
-const MARKED_CONTENT = 'marked-content';
-
-const TITLE_TAGS = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
-
-const TITLE_INDICATOR_KEYWORDS = ['headline', 'title'];
+const SEMANTIC_TAGS = {
+    title: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+    // article: ['article', 'section']
+};
+const SEMANTIC_KEYWORDS = {
+    title: ['headline', 'title'],
+    // article: ['content', 'post']
+};
 
 const EXCLUDED_TAGS = ['script', 'link', 'meta', 'style', 'noscript', 'br', 
 'hr', 'source', 'param', 'track', 'input', 'nav', 'footer', 'button', 'header', 'time', 'form'];
 
-const EXCLUDED_WORDS = ['mobile', 'name', 'date', 'print', 'time'];
+const EXCLUDED_KEYWORDS = ['mobile', 'name', 'date', 'print', 'time', 'tinytime', 'author'];
 
+/*****************************************************************************************************************/
+
+
+
+/**************************************************** Main Logic *************************************************/
 
 function renderPlayer() {
-    injectStyles(PLAYER_STYLES);
-    preprocessHtml();
-    const titlesOrSummaries = getValidatedTitlesOrSummaries();
-    markRelevantContent(titlesOrSummaries);
+    
+    const potentialTitles = identifyPotentialTitles();
+
+    markContentForButtons(potentialTitles);
+
     renderPlayerButtons();
-    addPlayButtonEventListener();
+
 }
 
 
-function isValidContent(element) {
-    const content = element.textContent.trim();
+/**
+ * Returns validated titles based on their semantic HTML attributes.
+ * The function traverses the entire document, identifies potential titles or summaries, and
+ * validates them against a set of criteria like HTML tag type, class names, and adjacent content height.
+ * 
+ * @returns {Array} An array of HTML elements that are considered valid titles or summaries.
+ */
+function identifyPotentialTitles() {
 
-    /*const hasExcludedWords = Array.from(element.classList).some(className => {
-        const parts = [className, ...className.split('-')];
-        return parts.some(part => EXCLUDED_WORDS.includes(part.toLowerCase()));
-    });
+    let titles = [];
+    
+    let stack = [document.body];
 
+    while(stack.length){
+        const current = stack.pop();
 
-    const hasExcludedWords = Array.from(element.classList).some(className => {
-        return EXCLUDED_WORDS.some(excludedWord => className.toLowerCase().includes(excludedWord));
-    });
+        if(hasExclusionCriteria(current))continue;
 
+        if(isPotentialTitle(current))titles.push(current);
+            
+        stack.push(...Array.from(current.children));
+    }
+    
+    return titles;
+}
+/**
+ * Checks if a given HTML element is relevant content (like a title or summary) based on its tag, class, and adjacent element height.
+ * 
+ * @param {HTMLElement} element - The HTML element to validate.
+ * @returns {boolean} True if the element is considered a relevant content, otherwise false.
+ */
+function isPotentialTitle(element) {
 
-    if(hasExcludedWords)return false;*/
+    const nextElement = element.nextElementSibling;
 
-    // Check for all-uppercase words
-    const uppercasePattern = /\b[A-Z]+\b/;
-    if (uppercasePattern.test(content)) return false;
+    if(!matchesSemanticCriteria(element))return false;
 
-    return true;
+    // Check if the title might be a category title based on the size or absence of the next element
+    if (!nextElement || getElementHeight(nextElement) <= MAX_HEIGHT_BELOW_TITLE) {
+        return true;
+    }
+
+    return false;
 }
 
 
-function markRelevantContent(elements) {
+/**
+ * Marks content sections for association with player buttons for speech synthesis.
+ * 
+ * @param {Array} elements - The list of elements to process.
+ */
+function markContentForButtons(elements) {
 
     let buttonId = 0;
-    elements.forEach(element => {
-        // Check if the element hasn't been marked yet
-        if (!element.hasAttribute(MARKED_CONTENT)) {
 
+    elements.forEach(element => {
+        if (!element.hasAttribute(MARKED_CONTENT_ATTRIBUTE)) {
             buttonId++;
-            element.setAttribute(PLAYER_BUTTON, buttonId);
-            if(isValidContent(element))
-                element.setAttribute(MARKED_CONTENT, buttonId);
-            markSiblings(element, buttonId);
+
+            element.setAttribute(PLAYER_BUTTON_ATTRIBUTE , buttonId);
+            if(isValidContent(element)){
+                element.setAttribute(MARKED_CONTENT_ATTRIBUTE , buttonId);
+            }
+            ensureUniqueContentForSpeaking(element, buttonId);
         }
     });
 }
-
-function markSiblings(element, buttonId) {
+/**
+ * Ensures that the given element, its siblings, and descendants 
+ * are unique to prevent them from being duplicated for speech synthesis.
+ * 
+ * @param {Element} element - The element to start from.
+ * @param {Number} buttonId - The identifier of the associated player button.
+ */
+function ensureUniqueContentForSpeaking(element, buttonId){
     let sibling = element;
 
     // Iterate through the next siblings of the element
     while (sibling) {
-        if (!sibling.hasAttribute(MARKED_CONTENT)) {
-            if(isValidContent(element))
-                sibling.setAttribute(MARKED_CONTENT, buttonId);
+        if (!sibling.hasAttribute(MARKED_CONTENT_ATTRIBUTE )) {
+            if(isValidContent(element)){
 
-            // Check children of the sibling
+                sibling.setAttribute(MARKED_CONTENT_ATTRIBUTE , buttonId);
+            }
+                
             sibling.childNodes.forEach(child => {
                 if (child.nodeType === Node.ELEMENT_NODE) {
-                    markSiblings(child, buttonId);
+
+                    ensureUniqueContentForSpeaking(child, buttonId);
                 }
             });
         }
@@ -98,90 +145,16 @@ function markSiblings(element, buttonId) {
 }
 
 
-
-function preprocessHtml(){
-    calculateTagHeight(document.body);
-}
-
-function calculateTagHeight(element) {
-    // Base condition: If the element has no children, its height is 0
-    if (!element.children.length) {
-        element.setAttribute(TAG_HEIGHT, 0);
-        return 0;
-    }
-
-    const currentHeight = 1;
-
-    let maxChildHeight = 0;
-    for (const child of element.children) {
-        maxChildHeight = Math.max(maxChildHeight, calculateTagHeight(child));
-        element.setAttribute(TAG_HEIGHT, maxChildHeight);
-    }
-
-    return currentHeight + maxChildHeight;
-}
-
-
-/**
- * Returns validated titles or summaries based on their HTML structure and styling.
- * It searches through the entire document, identifies potential titles, and
- * checks them against a set of criteria (like HTML tag type, class names, and adjacent content height).
- * 
- * @returns {Array} An array of HTML elements that are considered valid titles or summaries.
- */
-function getValidatedTitlesOrSummaries() {
-
-    let titlesOrSummaries = [];
-    
-    let stack = [document.body];
-
-    while(stack.length){
-        const current = stack.pop();
-
-        if(hasExcludedElements(current))continue;
-
-        if(isRelativeContent(current))titlesOrSummaries.push(current);
-            
-        stack.push(...Array.from(current.children));
-    }
-    
-    return titlesOrSummaries;
-}
-/**
- * Checks if a given HTML element is relevant content (like a title or summary) based on its tag, class, and adjacent element height.
- * 
- * @param {HTMLElement} element - The HTML element to validate.
- * @returns {boolean} True if the element is considered a relevant content, otherwise false.
- */
-function isRelativeContent(element) {
-
-    const nextElement = element.nextElementSibling;
-
-    const hasValidTag = TITLE_TAGS.includes(element.tagName.toLowerCase());
-
-    const hasValidIndicatorKeyword = Array.from(element.classList).some(className => {
-        const parts = className.split('-');
-        return parts.some(part => TITLE_INDICATOR_KEYWORDS.includes(part.toLowerCase()));
-    });
-
-    if(hasValidTag || hasValidIndicatorKeyword){
-        if(!nextElement || (nextElement && nextElement.getAttribute(TAG_HEIGHT) <= MAX_HEIGHT_FOR_TITLE))
-            return true;
-    }
-
-    return false;
-}
-
-
-
 /**
  * Creates and appends play buttons next to the specified elements.
  *
  * @param {HTMLElement[]} elements - The list of elements beside which the player buttons are to be added.
  */
 function renderPlayerButtons() {
-    const elements = document.querySelectorAll(`[${PLAYER_BUTTON}]`); // This gets all elements with the PLAYER_BUTTON attribute
-    console.log(elements);
+    injectStyles(PLAYER_STYLES);
+    
+    const elements = document.querySelectorAll(`[${PLAYER_BUTTON_ATTRIBUTE }]`); // This gets all elements with the PLAYER_BUTTON_ATTRIBUTE  attribute
+    
     elements.forEach(element => {
         const btn = document.createElement("button");
         btn.classList.add("player-button");
@@ -198,10 +171,9 @@ function renderPlayerButtons() {
 
         element.parentNode.insertBefore(btn, element.nextSibling);
     });
+
+    addPlayButtonEventListener();
 }
-
-
-
 /**
  * Adds event listeners to the player buttons.
  * 
@@ -244,15 +216,19 @@ function addPlayButtonEventListener() {
 }
 
 
-
-
+/**
+ * Initiates speech synthesis for the title associated with the given button.
+ * 
+ * This function retrieves the title text from the button's previous element 
+ * (assuming the button is placed right after the title) and initiates speech synthesis
+ * to speak the title. If no title is found, it returns null.
+ * 
+ * @param {HTMLElement} button - The player button clicked by the user.
+ * @return {SpeechSynthesisUtterance|null} The speech utterance object or null if no title found.
+ */
 function speakTitle(button) {
     let titleElement = button.previousElementSibling;
 
-    //if(hasExcludedElements(titleElement)){
-     //   titleElement = Array.from(titleElement.children).find(child => !hasExcludedElements(child));
-    //}
-    
     if(!titleElement) return null;
 
     const title = decodeHtmlEntities(titleElement.textContent);
@@ -261,13 +237,23 @@ function speakTitle(button) {
     speechSynthesis.speak(utterance);
     return utterance;
 }
-
+/**
+ * Initiates speech synthesis for the content associated with the given button.
+ * 
+ * This function retrieves the content text from the button's next element, ensuring
+ * the content doesn't match any exclusion criteria. If eligible content is found,
+ * it initiates speech synthesis to speak the content. If no content is found or it
+ * matches the exclusion criteria, it returns null.
+ * 
+ * @param {HTMLElement} button - The player button clicked by the user.
+ * @return {SpeechSynthesisUtterance|null} The speech utterance object or null if no content found.
+ */
 function speakContent(button) {
     let contentElement = button.nextElementSibling;
 
     // Loop to find the next eligible content element
-    while(contentElement && hasExcludedElements(contentElement)) {
-
+    while(contentElement && hasExclusionCriteria(contentElement)) {
+        console.log("No content next to title!");
         contentElement = contentElement.nextElementSibling;
     }
 
@@ -275,56 +261,167 @@ function speakContent(button) {
 
     const contentTexts = getTextNodesIn(contentElement)
                               .map(node => {
-                                  // Print text before filtering
-                                  console.log("Before decoding:", node.nodeValue);
+                                  
+                                  //console.log("Before decoding:", node.nodeValue);
 
                                   const decoded = decodeHtmlEntities(node.nodeValue);
 
-                                  // Print text after filtering
-                                  console.log("After decoding:", decoded);
+                                  //console.log("After decoding:", decoded);
 
                                   return decoded;
                               })
                               .join(' ');
                                
     const utterance = new SpeechSynthesisUtterance(contentTexts);
-    console.log(utterance, contentTexts);
+    console.log("speak content:", contentTexts);
     speechSynthesis.speak(utterance);
     return utterance;
 }
 
-function hasExcludedElements(elem) {
-
-    const hasExcludedClassName = Array.from(elem.classList).some(className => 
-        EXCLUDED_WORDS.some(excludedWord => className.toLowerCase().includes(excludedWord))
-    );
-
-    const hasExcludedTag = EXCLUDED_TAGS.includes(elem.tagName.toLowerCase());
-
-    return hasExcludedClassName || hasExcludedTag;
-}
+/***********************************************************************************************************/
 
 
 
 
+/********************************************** Utilities **************************************************/
 
-
-
-
-
+/**
+ * Retrieves all text nodes within an element while respecting the exclusion criteria.
+ *
+ * @param {HTMLElement} elem - The parent element.
+ * @returns {Array} Array of text nodes.
+ */
 function getTextNodesIn(elem) {
     let textNodes = [];
+    
     for (let node of elem.childNodes) {
         if (node.nodeType === 3) { // text node
             textNodes.push(node);
-        } else {
+        } else if (node.nodeType === 1 && !hasExclusionCriteria(node)) { // element node and not excluded
             textNodes = textNodes.concat(getTextNodesIn(node));
         }
     }
+    
     return textNodes;
 }
 
 
+/**
+ * Determines if an element matches semantic criteria for a specified type (e.g., title).
+ * It checks the element's tag and class attributes against a predefined list of semantic tags and keywords.
+ * 
+ * @param {HTMLElement} element - The element to check.
+ * @param {string} type - The semantic type (e.g., 'title'). Default is 'title'.
+ * @returns {boolean} True if the element matches the semantic criteria, otherwise false.
+ */
+function matchesSemanticCriteria(element, type = 'title') {
+    const hasValidTag = SEMANTIC_TAGS[type].includes(element.tagName.toLowerCase());
+
+    const hasValidIndicatorKeyword = Array.from(element.classList).some(className => {
+        const parts = className.split('-');
+        return parts.some(part => SEMANTIC_KEYWORDS[type].includes(part.toLowerCase()));
+    });
+
+    return hasValidTag || hasValidIndicatorKeyword;
+}
+
+
+/**
+ * Determines if an element matches any exclusion criteria.
+ * It checks the element's tag and class attributes against a predefined list of excluded tags and keywords.
+ * 
+ * @param {HTMLElement} element - The element to check.
+ * @returns {boolean} True if the element matches the exclusion criteria, otherwise false.
+ */
+function hasExclusionCriteria(element) {
+    const hasExcludedTag = EXCLUDED_TAGS.includes(element.tagName.toLowerCase());
+
+    const hasExcludedKeyword = Array.from(element.classList).some(className => {
+        if (EXCLUDED_KEYWORDS.includes(className.toLowerCase())) {
+            return true; // Case where the class is a standalone excluded word
+        }
+
+        const parts = className.split('-');
+        return parts.some(part => EXCLUDED_KEYWORDS.includes(part.toLowerCase()));
+    });
+
+    return hasExcludedTag || hasExcludedKeyword;
+}
+
+
+/**
+ * Calculates the height of the given element in the DOM tree.
+ * The height of an element is defined as:
+ * - 0 if the element has no children.
+ * - 1 plus the maximum height of its children if the element has children.
+ *
+ * @param {HTMLElement} element - The element for which the height is to be calculated.
+ * @returns {number} - The height of the element.
+ */
+function getElementHeight(element) {
+    // Base condition: If the element has no children, its height is 0
+    if (!element.children.length) {
+        return 0;
+    }
+    // Has at least 1 child
+    const currentHeight = 1;
+
+    let maxChildHeight = 0;
+    for (const child of element.children) {
+        maxChildHeight = Math.max(maxChildHeight, getElementHeight(child));
+    }
+
+    return currentHeight + maxChildHeight;
+}
+
+
+/**
+ * Checks if an element's content is valid for reading.
+ * Elements with all-uppercase content are considered not valid.
+ * 
+ * @param {Element} element - The element to check.
+ * @returns {Boolean} - Whether the element is valid for reading.
+ */
+function isValidContent(element) {
+    const content = element.textContent.trim();
+
+    // Check for all-uppercase words
+    const uppercasePattern = /\b[A-Z]+\b/;
+    return !uppercasePattern.test(content);
+}
+
+/**
+ * Stops all currently speaking audio buttons except for a specified one.
+ * 
+ * This function iterates through all the audio player buttons on the page and
+ * stops their speech synthesis if they are currently speaking. The function 
+ * provides an option to exclude a specific button from being stopped.
+ * 
+ * @param {HTMLElement} excludedBtn - The audio button that should not be stopped.
+ */
+function stopAllSpeakingButtons(excludedBtn) {
+    const buttons = document.querySelectorAll(".player-button");
+    buttons.forEach(button => {
+
+        if (button !== excludedBtn && button.isSpeaking) {
+            speechSynthesis.cancel();
+            togglePlayStop(button, 'play');
+            button.isSpeaking = false;
+        }
+    });
+}
+/**
+ * Decodes HTML entities and cleans up a provided HTML string.
+ * 
+ * This function:
+ * 1. Converts HTML `<br>` tags to newline characters.
+ * 2. Decodes the HTML entities to their corresponding characters.
+ * 3. Strips out all other HTML tags.   
+ * 4. Consolidates multiple spaces or tabs into a single space.
+ * 
+ * @param {string} text - The input HTML string to be decoded and cleaned.
+ * @returns {string} The cleaned string without HTML tags and with HTML entities decoded.
+ */
 
 function decodeHtmlEntities(text) {
     const textarea = document.createElement("textarea");
@@ -340,23 +437,17 @@ function decodeHtmlEntities(text) {
     // Replace multiple spaces or tabs with a single space
     return text.replace(/\s+/g, ' ');
 }
-
-
-
-function stopAllSpeakingButtons(excludedBtn) {
-    const buttons = document.querySelectorAll(".player-button");
-    buttons.forEach(button => {
-
-        if (button !== excludedBtn && button.isSpeaking) {
-            speechSynthesis.cancel();
-            togglePlayStop(button, 'play');
-            button.isSpeaking = false;
-        }
-    });
-}
-
-
-
+/**
+ * Toggles the visual state of the audio player button between play and stop.
+ * 
+ * This function modifies the appearance of a specified audio player button
+ * to either a play or stop state, based on the provided state parameter.
+ * It also sets the `isSpeaking` attribute of the button to reflect the current state.
+ * If transitioning to the 'play' state, any ongoing speech synthesis is cancelled.
+ * 
+ * @param {HTMLElement} button - The audio player button to be toggled.
+ * @param {string} state - The desired state of the button: 'play' or 'stop'.
+ */
 function togglePlayStop(button, state){
     speechSynthesis.cancel();
     const playIcon = button.querySelector('.play-icon');
@@ -374,13 +465,17 @@ function togglePlayStop(button, state){
 }
 
 
-
 function injectStyles(styles) {
     const styleSheet = document.createElement("style");
     styleSheet.innerText = styles;
     document.head.appendChild(styleSheet);
 }
 
+/*****************************************************************************************************************/
+
+
+
+/********************************************** Styles ***********************************************************/
 const PLAYER_STYLES = `
     .player-button {
         margin-right: auto;
@@ -428,3 +523,4 @@ const PLAYER_STYLES = `
         display: none; 
     }
 `;
+/*****************************************************************************************************************/
